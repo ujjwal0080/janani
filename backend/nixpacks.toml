@@ -1,0 +1,8 @@
+[phases.setup]
+nixPkgs = ["nodejs_20", "python311", "python311Packages.pip", "ffmpeg-full", "curl"]
+
+[phases.install]
+cmds = ["npm install --production", "pip install -r requirements.txt"]
+
+[start]
+cmd = "sh start.sh"

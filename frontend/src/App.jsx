@@ -37,6 +37,8 @@ const HERO_IMAGE = 'https://clipart-library.com/2024/pregnant-woman-cartoon/preg
 const API_BASE = import.meta.env.VITE_API_URL || 'http://localhost:5000';
 
 const Navbar = ({ onAuthClick, user, onLogout, onContactClick, contactLoading, setView, currentView }) => {
+  const [activeLandingSection, setActiveLandingSection] = useState('home');
+
   return (
     <nav className="glass-nav">
       <div className="container nav-inner">
@@ -60,15 +62,21 @@ const Navbar = ({ onAuthClick, user, onLogout, onContactClick, contactLoading, s
               key={item}
               to={item.toLowerCase()}
               smooth={true}
+              spy={true}
+              activeClass="nav-link-active"
               duration={500}
               offset={-70}
-              onClick={() => setView('landing')}
-              className={`nav-link ${currentView === 'landing' ? 'nav-link-active' : ''}`}
+              onSetActive={() => setActiveLandingSection(item.toLowerCase())}
+              onClick={() => {
+                setView('landing');
+                setActiveLandingSection(item.toLowerCase());
+              }}
+              className="nav-link"
               style={{
                 cursor: 'pointer',
                 fontWeight: '600',
                 fontSize: '1rem',
-                color: currentView === 'landing' ? 'var(--text-dark)' : '#64748b',
+                color: currentView === 'landing' && activeLandingSection === item.toLowerCase() ? 'var(--primary)' : '#64748b',
                 transition: 'color 0.25s ease'
               }}
             >
@@ -343,7 +351,7 @@ const CareSection = () => {
           >
             <h2 style={{ fontSize: '3rem', marginBottom: '1rem' }}>Seeing is Believing</h2>
             <p style={{ maxWidth: '700px', margin: '0 auto 4rem', color: 'var(--text-light)' }}>
-              Watch how MatriCare AI transforms the complex prenatal tracking process into a simple, natural conversation.
+              Watch how Janani AI transforms the complex prenatal tracking process into a simple, natural conversation.
             </p>
 
             <div style={{
@@ -1321,7 +1329,7 @@ const MainContent = ({ assistantRef, user }) => {
             />
             <FeatureCard
               icon={MessageCircle}
-              title="Bhavini & Google TTS"
+              title="Sarvam TTS"
               desc="Leveraging Indian-language APIs for local accessibility in Hindi, Marathi, and Tamil."
               delay={0.4}
             />
@@ -1551,14 +1559,14 @@ const Footer = ({ user }) => (
         <div>
           <h4 style={{ color: 'white', marginBottom: '1.5rem' }}>Tech Stack</h4>
           <ul style={{ listStyle: 'none', opacity: 0.8 }}>
-            <li style={{ marginBottom: '0.8rem' }}>Bhavini AI API</li>
-            <li style={{ marginBottom: '0.8rem' }}>Google TTS</li>
-            <li style={{ marginBottom: '0.8rem' }}>Hugging Face Models</li>
+            <li style={{ marginBottom: '0.8rem' }}>Groq API</li>
+            <li style={{ marginBottom: '0.8rem' }}>Sarvam TTS</li>
+            <li style={{ marginBottom: '0.8rem' }}>Twilio</li>
           </ul>
         </div>
       </div>
       <div style={{ borderTop: '1px solid rgba(255,255,255,0.1)', paddingTop: '2rem', textAlign: 'center', opacity: 0.6, fontSize: '0.8rem' }}>
-        © 2026 MatriCare AI. Hackathon Finalist Entry.
+        © 2026 Janani AI
       </div>
     </div>
   </footer>
@@ -1677,6 +1685,7 @@ function App() {
     localStorage.removeItem('user');
     setUser(null);
     setView('landing');
+    window.scrollTo({ top: 0, behavior: 'auto' });
   };
 
   return (

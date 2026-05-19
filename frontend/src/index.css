@@ -119,30 +119,11 @@ h6 {
 }
 
 .nav-link {
-  position: relative;
   border-radius: 6px;
-}
-
-.nav-link::after {
-  content: '';
-  position: absolute;
-  left: 0;
-  bottom: -6px;
-  width: 100%;
-  height: 2px;
-  background: linear-gradient(90deg, var(--primary), var(--secondary));
-  transform: scaleX(0);
-  transform-origin: left;
-  transition: transform 0.22s ease;
 }
 
 .nav-link:hover {
   color: var(--primary) !important;
-}
-
-.nav-link:hover::after,
-.nav-link-active::after {
-  transform: scaleX(1);
 }
 
 .nav-actions {

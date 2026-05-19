@@ -8,6 +8,7 @@ backend/node_modules/
 backend/.env
 
 # Local Python environment artifacts
+.venv/
 backend/Include/
 backend/Lib/
 backend/Scripts/
