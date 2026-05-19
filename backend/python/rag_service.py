@@ -33,7 +33,7 @@ class PregnancyRAGService:
         if not index_exists:
             print(f"⚠️ VectorDB at {persist_directory} not found or empty. Initializing from health_book.txt...")
             from ingest import ingest_docs
-            health_file = "health_book.txt"
+            health_file = str(Path(__file__).resolve().parent / "health_book.txt")
             if os.path.exists(health_file):
                 ingest_docs(health_file, persist_directory)
             else:
