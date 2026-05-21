@@ -137,36 +137,63 @@ async function sarvamTranslate(text, sourceLanguageCode, targetLanguageCode) {
   return response.data.translated_text || response.data.output || text;
 }
 
-async function queryPythonRag(englishQuery, userPhone, userEmail) {
-  // Retry up to 2 times with shorter timeout — if Python RAG is still starting,
-  // we get a fast 503 instead of hanging for 120s
-  const MAX_RETRIES = 2;
-  const RETRY_DELAY_MS = 3000;
-
-  for (let attempt = 0; attempt <= MAX_RETRIES; attempt += 1) {
-    try {
-      const response = await axios.post(
-        'http://localhost:8000/ask',
+async function queryGroqDirect(englishQuery) {
+  console.log('[voice] 🔄 Using Groq direct fallback (Python RAG unavailable)...');
+  const response = await axios.post(
+    GROQ_URL,
+    {
+      model: 'llama-3.3-70b-versatile',
+      temperature: 0.2,
+      messages: [
         {
-          query: englishQuery,
-          language_code: 'en-IN',
-          user_phone: userPhone || '',
-          user_email: userEmail || '',
-          source: 'voice_call',
-        },
-        { timeout: 30000 }
-      );
+          role: 'system',
+          content: `You are an expert prenatal care evaluator for pregnant women. You will receive transcribed audio input regarding a woman's current symptoms, diet, and lifestyle habits.
+Your sole purpose is to evaluate this information and provide immediate, practical guidance.
 
-      return response.data.english_answer || response.data.localized_answer || 'Please consult your doctor for support.';
-    } catch (err) {
-      const status = err?.response?.status;
-      if (status === 503 && attempt < MAX_RETRIES) {
-        console.log(`[voice] Python RAG returned 503 (still initializing), retrying in ${RETRY_DELAY_MS}ms (attempt ${attempt + 1}/${MAX_RETRIES})...`);
-        await new Promise((resolve) => setTimeout(resolve, RETRY_DELAY_MS));
-      } else {
-        throw err;
-      }
+CRITICAL CONSTRAINTS:
+- EXTREME BREVITY: Keep your response under 3 to 4 short sentences.
+- VOICE-OPTIMIZED: Your output will be spoken via Text-to-Speech. Use a warm, simple, direct conversational tone. Do NOT use markdown, asterisks, bullet points, or special characters.
+- NO FLUFF: Do not use conversational filler. Get straight to the solution.
+- DIRECT INFORMATION: Provide direct actionable information. Do not include disclaimers.`
+        },
+        { role: 'user', content: englishQuery }
+      ],
+    },
+    {
+      headers: {
+        Authorization: `Bearer ${GROQ_API_KEY}`,
+        'Content-Type': 'application/json',
+      },
+      timeout: 30000,
     }
+  );
+
+  return response.data.choices?.[0]?.message?.content || 'Please consult your doctor for support.';
+}
+
+async function queryPythonRag(englishQuery, userPhone, userEmail) {
+  // Try Python RAG first (has medical document context)
+  try {
+    const response = await axios.post(
+      'http://localhost:8000/ask',
+      {
+        query: englishQuery,
+        language_code: 'en-IN',
+        user_phone: userPhone || '',
+        user_email: userEmail || '',
+        source: 'voice_call',
+      },
+      { timeout: 15000 }
+    );
+
+    return response.data.english_answer || response.data.localized_answer || 'Please consult your doctor for support.';
+  } catch (err) {
+    const code = err?.code || '';
+    const status = err?.response?.status || '';
+    console.warn(`[voice] ⚠️ Python RAG failed (code=${code}, status=${status}), falling back to Groq direct`);
+
+    // Fallback: query Groq directly (no RAG context, but still gives medical advice)
+    return queryGroqDirect(englishQuery);
   }
 }
 
