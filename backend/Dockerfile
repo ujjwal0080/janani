@@ -18,6 +18,10 @@ RUN npm install --production
 COPY requirements.txt ./
 RUN pip install --no-cache-dir --break-system-packages -r requirements.txt
 
+# Pre-download the embedding model so it's baked into the image
+# (avoids 1-2 minute download on every container start)
+RUN python -c "from fastembed import TextEmbedding; TextEmbedding('BAAI/bge-small-en-v1.5')"
+
 # Application code
 COPY . .
 
