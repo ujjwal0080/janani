@@ -350,6 +350,8 @@ router.post('/trigger', async (req, res) => {
       statusCallbackMethod: 'POST',
     });
 
+    console.log(`[voice] ✅ Twilio call created: SID=${call.sid}, to=${MY_PHONE_NUMBER}, from=${TWILIO_PHONE_NUMBER}`);
+
     // Link this callSid to the logged-in user's identity
     if (user_email || user_phone) {
       callUserIdentity.set(call.sid, { email: user_email || '', phone: user_phone || '' });
@@ -363,7 +365,10 @@ router.post('/trigger', async (req, res) => {
       callSid: call.sid,
     });
   } catch (error) {
-    return res.status(500).json({ message: 'Failed to initiate call', error: error.message });
+    const twilioCode = error.code || '';
+    const twilioMoreInfo = error.moreInfo || '';
+    console.error(`[voice] ❌ TRIGGER FAILED: ${error.message} | Twilio code: ${twilioCode} | Info: ${twilioMoreInfo}`);
+    return res.status(500).json({ message: 'Failed to initiate call', error: error.message, twilioCode, twilioMoreInfo });
   }
 });
 
