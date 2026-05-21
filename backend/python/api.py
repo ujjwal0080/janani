@@ -5,6 +5,7 @@ if sys.stdout.encoding and sys.stdout.encoding.lower() != 'utf-8':
 if sys.stderr.encoding and sys.stderr.encoding.lower() != 'utf-8':
     sys.stderr.reconfigure(encoding='utf-8', errors='replace')
 
+from contextlib import asynccontextmanager
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
@@ -28,17 +29,6 @@ else:
 
 SARVAM_API_KEY = os.getenv("SARVAM_API_KEY")
 
-app = FastAPI(title="Janani Voice RAG API")
-
-# Enable CORS
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=["*"],
-    allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
-)
-
 # ─── MongoDB Connection ─────────────────────────────────────────────────────
 MONGO_URI = os.getenv(
     "MONGO_URI",
@@ -53,6 +43,72 @@ health_logs_collection = db["healthlogs"]
 service = None
 translator_llm = None
 clinical_llm = None
+
+# ─── Helpers ─────────────────────────────────────────────────────────────────
+_VALID_FETAL_MOVEMENT = {'Yes', 'No', 'Invalid'}
+
+def _sanitize_fetal_movement(value: str) -> str:
+    """Map any fetal_movement value to a valid Mongoose enum member."""
+    if value in _VALID_FETAL_MOVEMENT:
+        return value
+    return 'Invalid'
+
+# ─── Lifespan (replaces deprecated @app.on_event) ───────────────────────────
+@asynccontextmanager
+async def lifespan(application: FastAPI):
+    global service, translator_llm, clinical_llm
+
+    # 1. MongoDB
+    try:
+        await mongo_client.admin.command("ping")
+        print("✅ MongoDB connected from Python RAG API")
+    except Exception as e:
+        print(f"⚠️ MongoDB connection warning: {e}")
+
+    # 2. Groq LLMs
+    try:
+        groq_key = os.getenv("GROQ_API_KEY")
+        print(f"🔑 GROQ_API_KEY present: {bool(groq_key)}")
+        translator_llm = ChatGroq(
+            temperature=0,
+            model_name="llama-3.3-70b-versatile",
+            groq_api_key=groq_key
+        )
+        clinical_llm = ChatGroq(
+            temperature=0.2,
+            model_name="llama-3.3-70b-versatile",
+            groq_api_key=groq_key
+        )
+        print("✅ Groq LLMs initialized")
+    except Exception as e:
+        print(f"❌ Groq LLM init failed: {e}")
+        import traceback; traceback.print_exc()
+
+    # 3. RAG Service (heaviest — downloads model + ingests health_book.txt)
+    try:
+        print("🧠 Initializing RAG Service (this may take 1-2 minutes on first run)...")
+        service = PregnancyRAGService()
+        print("✅ RAG Service initialized")
+    except Exception as e:
+        print(f"❌ RAG Service init failed: {e}")
+        import traceback; traceback.print_exc()
+
+    yield  # app runs here
+
+    # Shutdown: close MongoDB client
+    mongo_client.close()
+
+
+app = FastAPI(title="Janani Voice RAG API", lifespan=lifespan)
+
+# Enable CORS
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
 
 
 # ─── Pydantic Models ─────────────────────────────────────────────────────────
@@ -156,7 +212,7 @@ Return ONLY valid JSON (no markdown):
   "medications": ["list of medications/supplements mentioned"],
   "relief_noted": true/false,
   "relief_details": "what improved or helped",
-  "fetal_movement": "Yes/No/Unknown",
+  "fetal_movement": "Yes/No/Invalid",
   "severity": 1-10,
   "summary": "one sentence clinical summary"
 }}"""
@@ -171,7 +227,7 @@ Return ONLY valid JSON (no markdown):
         return {
             "symptoms": [], "medications": [],
             "relief_noted": False, "relief_details": "",
-            "fetal_movement": "Unknown", "severity": 5,
+            "fetal_movement": "Invalid", "severity": 5,
             "summary": transcript[:200]
         }
 
@@ -217,7 +273,7 @@ async def save_to_mongodb(request: QueryRequest, eng_query: str, eng_answer: str
         "medications": med_entries,
         "relief_noted": clinical.get("relief_noted", False),
         "relief_details": clinical.get("relief_details", ""),
-        "fetal_movement_status": clinical.get("fetal_movement", "Unknown"),
+        "fetal_movement_status": _sanitize_fetal_movement(clinical.get("fetal_movement", "Invalid")),
         "severity_score": clinical.get("severity", 5),
         "ai_summary": clinical.get("summary", ""),
         "_source": request.source,
@@ -285,7 +341,7 @@ async def ask(request: QueryRequest):
         # 5. Clinical extraction (best-effort)
         clinical_data = {
             "symptoms": [], "medications": [], "relief_noted": False,
-            "relief_details": "", "fetal_movement": "Unknown", "severity": 5, "summary": ""
+            "relief_details": "", "fetal_movement": "Invalid", "severity": 5, "summary": ""
         }
         try:
             clinical_data = await extract_clinical_data(english_query, english_answer)
@@ -312,52 +368,6 @@ async def ask(request: QueryRequest):
         import traceback; traceback.print_exc()
         raise HTTPException(status_code=500, detail=str(e))
 
-
-# ─── Health Check ────────────────────────────────────────────────────────────
-@app.get("/health")
-async def health():
-    return {"status": "ok", "service": "python-rag"}
-
-
-# ─── Startup ─────────────────────────────────────────────────────────────────
-@app.on_event("startup")
-async def startup():
-    global service, translator_llm, clinical_llm
-
-    # 1. MongoDB
-    try:
-        await mongo_client.admin.command("ping")
-        print("✅ MongoDB connected from Python RAG API")
-    except Exception as e:
-        print(f"⚠️ MongoDB connection warning: {e}")
-
-    # 2. Groq LLMs
-    try:
-        groq_key = os.getenv("GROQ_API_KEY")
-        print(f"🔑 GROQ_API_KEY present: {bool(groq_key)}")
-        translator_llm = ChatGroq(
-            temperature=0,
-            model_name="llama-3.3-70b-versatile",
-            groq_api_key=groq_key
-        )
-        clinical_llm = ChatGroq(
-            temperature=0.2,
-            model_name="llama-3.3-70b-versatile",
-            groq_api_key=groq_key
-        )
-        print("✅ Groq LLMs initialized")
-    except Exception as e:
-        print(f"❌ Groq LLM init failed: {e}")
-        import traceback; traceback.print_exc()
-
-    # 3. RAG Service (heaviest — downloads model + ingests health_book.txt)
-    try:
-        print("🧠 Initializing RAG Service (this may take 1-2 minutes on first run)...")
-        service = PregnancyRAGService()
-        print("✅ RAG Service initialized")
-    except Exception as e:
-        print(f"❌ RAG Service init failed: {e}")
-        import traceback; traceback.print_exc()
 
 
 if __name__ == "__main__":

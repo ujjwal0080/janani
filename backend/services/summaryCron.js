@@ -97,6 +97,14 @@ async function generateAndPersist(periodType) {
       };
     }
 
+    // Ensure timeline fields are strings — the LLM may return arrays/objects
+    const sympTimeline = typeof summary.symptoms_timeline === 'string'
+      ? summary.symptoms_timeline
+      : JSON.stringify(summary.symptoms_timeline || '');
+    const medTimeline = typeof summary.medications_timeline === 'string'
+      ? summary.medications_timeline
+      : JSON.stringify(summary.medications_timeline || '');
+
     log.summaries.push({
       type: periodType,
       period_start: start,
@@ -105,8 +113,8 @@ async function generateAndPersist(periodType) {
       summary_english: summary.summary_english || '',
       summary_native: summary.summary_native || '',
       total_interactions: interactions.length,
-      symptoms_timeline: summary.symptoms_timeline || '',
-      medications_timeline: summary.medications_timeline || '',
+      symptoms_timeline: sympTimeline,
+      medications_timeline: medTimeline,
       avg_severity: Number(avgSeverity.toFixed(2)),
       doctor_notes: summary.doctor_notes || '',
     });
