@@ -628,9 +628,12 @@ async function processVoicePipeline({ RecordingUrl, CallSid, From, To, Direction
       });
     }
   } catch (error) {
-    const errMsg = error?.response?.data
-      ? `HTTP ${error.response.status}: ${JSON.stringify(error.response.data).slice(0, 200)}`
-      : error.message;
+    let errMsg;
+    if (error?.response?.data) {
+      errMsg = `HTTP ${error.response.status}: ${JSON.stringify(error.response.data).slice(0, 300)}`;
+    } else {
+      errMsg = `${error.message || '(empty message)'} | code=${error.code || 'none'} | errno=${error.errno || 'none'}`;
+    }
     console.error(`[voice] [${CallSid}] ❌ PIPELINE FAILED at step "${pipelineStep}": ${errMsg}`);
 
     const errorCount = (callErrorCounts.get(CallSid) || 0) + 1;
