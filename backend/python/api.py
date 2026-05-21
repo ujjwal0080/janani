@@ -53,10 +53,21 @@ def _sanitize_fetal_movement(value: str) -> str:
         return value
     return 'Invalid'
 
+def _init_rag_in_background():
+    """Initialize RAG service in a background thread so it doesn't block FastAPI startup."""
+    global service
+    try:
+        print("🧠 Initializing RAG Service in background (this may take 1-2 minutes on first run)...")
+        service = PregnancyRAGService()
+        print("✅ RAG Service initialized and ready")
+    except Exception as e:
+        print(f"❌ RAG Service init failed: {e}")
+        import traceback; traceback.print_exc()
+
 # ─── Lifespan (replaces deprecated @app.on_event) ───────────────────────────
 @asynccontextmanager
 async def lifespan(application: FastAPI):
-    global service, translator_llm, clinical_llm
+    global translator_llm, clinical_llm
 
     # 1. MongoDB
     try:
@@ -65,7 +76,7 @@ async def lifespan(application: FastAPI):
     except Exception as e:
         print(f"⚠️ MongoDB connection warning: {e}")
 
-    # 2. Groq LLMs
+    # 2. Groq LLMs (fast — no downloads)
     try:
         groq_key = os.getenv("GROQ_API_KEY")
         print(f"🔑 GROQ_API_KEY present: {bool(groq_key)}")
@@ -84,19 +95,16 @@ async def lifespan(application: FastAPI):
         print(f"❌ Groq LLM init failed: {e}")
         import traceback; traceback.print_exc()
 
-    # 3. RAG Service (heaviest — downloads model + ingests health_book.txt)
-    try:
-        print("🧠 Initializing RAG Service (this may take 1-2 minutes on first run)...")
-        service = PregnancyRAGService()
-        print("✅ RAG Service initialized")
-    except Exception as e:
-        print(f"❌ RAG Service init failed: {e}")
-        import traceback; traceback.print_exc()
+    # 3. RAG Service — heavy, run in background thread so API accepts requests NOW
+    import threading
+    rag_thread = threading.Thread(target=_init_rag_in_background, daemon=True)
+    rag_thread.start()
 
-    yield  # app runs here
+    yield  # app accepts requests immediately; RAG initializes in parallel
 
     # Shutdown: close MongoDB client
     mongo_client.close()
+
 
 
 app = FastAPI(title="Janani Voice RAG API", lifespan=lifespan)

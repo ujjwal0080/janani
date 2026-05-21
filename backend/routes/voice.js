@@ -138,19 +138,36 @@ async function sarvamTranslate(text, sourceLanguageCode, targetLanguageCode) {
 }
 
 async function queryPythonRag(englishQuery, userPhone, userEmail) {
-  const response = await axios.post(
-    'http://localhost:8000/ask',
-    {
-      query: englishQuery,
-      language_code: 'en-IN',
-      user_phone: userPhone || '',
-      user_email: userEmail || '',
-      source: 'voice_call',
-    },
-    { timeout: 120000 }
-  );
+  // Retry up to 2 times with shorter timeout — if Python RAG is still starting,
+  // we get a fast 503 instead of hanging for 120s
+  const MAX_RETRIES = 2;
+  const RETRY_DELAY_MS = 3000;
 
-  return response.data.english_answer || response.data.localized_answer || 'Please consult your doctor for support.';
+  for (let attempt = 0; attempt <= MAX_RETRIES; attempt += 1) {
+    try {
+      const response = await axios.post(
+        'http://localhost:8000/ask',
+        {
+          query: englishQuery,
+          language_code: 'en-IN',
+          user_phone: userPhone || '',
+          user_email: userEmail || '',
+          source: 'voice_call',
+        },
+        { timeout: 30000 }
+      );
+
+      return response.data.english_answer || response.data.localized_answer || 'Please consult your doctor for support.';
+    } catch (err) {
+      const status = err?.response?.status;
+      if (status === 503 && attempt < MAX_RETRIES) {
+        console.log(`[voice] Python RAG returned 503 (still initializing), retrying in ${RETRY_DELAY_MS}ms (attempt ${attempt + 1}/${MAX_RETRIES})...`);
+        await new Promise((resolve) => setTimeout(resolve, RETRY_DELAY_MS));
+      } else {
+        throw err;
+      }
+    }
+  }
 }
 
 function splitTextIntoChunks(text, maxLen = 490) {
